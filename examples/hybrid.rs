@@ -10,13 +10,13 @@ const INSTRUMENTS: [Instrument; 1] = [
     Instrument{
         carrier_waveform: Waveform::Sine,
         amplitude: u16::MAX,
-        attack: 0,
-        decay: 0,
+        attack: (1<<12)/32,
+        decay: (1<<12)/32,
         sustain: u16::MAX,
-        release: 0,
+        release: (1<<12)/32,
         pan: 0,
-        modulator_waveform: Waveform::Triangle,
-        modulator_amplitude: u16::MAX/8,
+        modulator_waveform: Waveform::Sine,
+        modulator_amplitude: u16::MAX/2,
         modulator_mul: 2,
         modulator_div: 1,
         modulator_phase: 0
@@ -53,8 +53,8 @@ const CHANNEL0: [Command; 44] = [
 const CHANNELS: [&'static[Command]; 1]= [&CHANNEL0];
 
 const EXAMPLE: Tune = Tune{
-    samplerate: 8192,
-    beat_length: 1024,
+    samplerate: 48000,
+    beat_length: 5000,
     instruments: &INSTRUMENTS,
     channels: &CHANNELS
 };

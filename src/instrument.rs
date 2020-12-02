@@ -15,13 +15,42 @@ macro_rules! oscillator {
     (Waveform::Noise, $t:expr) => {i16noise($t)};
 }
 
+#[derive(Clone, Copy)]
+pub struct ADSRStep {
+    pub frames_left: i32,
+    pub amplitude_step: i32,
+}
+
+pub struct ADSRState {
+    pub cur_stage: usize,
+    pub stages: [ADSRStep; 4]
+}
+
+impl Default for ADSRState {
+    fn default() -> ADSRState {
+        ADSRState {
+            cur_stage: 0,
+            stages: [ADSRStep {frames_left: 0, amplitude_step: 0}; 4]
+        }
+    }
+}
+
+impl ADSRState {
+    pub fn init_stage_amplitude(&mut self, amplitude: &mut i32) {
+        while self.cur_stage < self.stages.len() && self.stages[self.cur_stage].frames_left == 0 {
+            *amplitude += self.stages[self.cur_stage].amplitude_step;
+            self.cur_stage += 1;
+        }
+    }
+}
+
 pub struct Instrument {
     pub carrier_waveform: Waveform,
-    pub amplitude: u16,
-    pub attack: u16,
-    pub decay: u16,
-    pub sustain: u16,
-    pub release: u16,
+    pub amplitude: u16, // 16-bit fixed point
+    pub attack: u16,  // 12-bit fixed point, in seconds.
+    pub decay: u16,   // 12-bit fixed point, in seconds.
+    pub sustain: u16, // 16-bit fixed point (sustain amplitude)
+    pub release: u16, // 12-bit fixed point, in seconds
     pub pan: u16,
     pub modulator_waveform: Waveform,
     pub modulator_amplitude: u16, // 16-bit fixed point
@@ -29,6 +58,7 @@ pub struct Instrument {
     pub modulator_div: u16,
     pub modulator_phase: u16,
 }
+
 
 // Note frequency lookup table, contains C8-B8. These are the frequencies
 // multiplied by 65536 and rounded to nearest integer.
@@ -49,8 +79,8 @@ const NOTE_FREQ_LOOKUP: [u32; 12] = [
 
 pub type Wavegen = fn(
     instr: &Instrument,
-    note_frames_done: i32,
-    note_frames_left: i32,
+    adsr: &mut ADSRState,
+    amplitude: &mut i32,
     carrier_step: i32,
     carrier_phase: &mut i32,
     modulator_step: i32,
@@ -58,42 +88,48 @@ pub type Wavegen = fn(
     out: &mut [i8]
 );
 
-pub fn dummy_wavegen(
-    _instr: &Instrument,
-    _note_frames_done: i32,
-    _note_frames_left: i32,
-    carrier_step: i32,
-    carrier_phase: &mut i32,
-    modulator_step: i32,
-    modulator_phase: &mut i32,
-    out: &mut [i8]
-){
-    for x in out.iter_mut() {
-        *x += (i16cos(*carrier_phase as i16) >> 8) as i8;
-        *carrier_phase += carrier_step;
-        *modulator_phase += modulator_step;
-    }
-}
-
 macro_rules! wavegen_template {
     ($carrier_waveform:ident, $modulator_waveform:ident) => {
         {
             fn local_wavegen(
                 instr: &Instrument,
-                _note_frames_done: i32,
-                _note_frames_left: i32,
+                adsr: &mut ADSRState,
+                amplitude: &mut i32,
                 carrier_step: i32,
                 carrier_phase: &mut i32,
                 modulator_step: i32,
                 modulator_phase: &mut i32,
                 out: &mut [i8]
             ){
-                for x in out.iter_mut() {
-                    let modulator = oscillator!(Waveform::$modulator_waveform, *modulator_phase as i16);
-                    let local_phase = ((modulator as i32) * (instr.modulator_amplitude as i32)) >> 16;
-                    *x += (oscillator!(Waveform::$carrier_waveform, (*carrier_phase + local_phase) as i16) >> 8) as i8;
-                    *carrier_phase += carrier_step;
-                    *modulator_phase += modulator_step;
+                let mut frames_left: i32 = out.len() as i32;
+                let mut start_frame: usize = 0;
+
+                while frames_left > 0 {
+                    let stage = &mut adsr.stages[adsr.cur_stage];
+                    let step_frames = if frames_left < stage.frames_left {
+                        frames_left
+                    } else {
+                        stage.frames_left
+                    };
+
+                    let end_frame = start_frame+(step_frames as usize);
+                    for x in out[start_frame..end_frame].iter_mut() {
+                        let modulator = oscillator!(Waveform::$modulator_waveform, *modulator_phase as i16);
+                        let local_phase = ((modulator as i32) * (instr.modulator_amplitude as i32)) >> 16;
+                        let carrier = oscillator!(Waveform::$carrier_waveform, (*carrier_phase + local_phase) as i16) as i32;
+                        *x += ((carrier*(*amplitude >> 9)) >> 23) as i8;
+                        *carrier_phase += carrier_step;
+                        *modulator_phase += modulator_step;
+                        *amplitude += stage.amplitude_step;
+                    }
+
+                    start_frame = end_frame;
+                    frames_left -= step_frames;
+                    stage.frames_left -= step_frames;
+                    if(stage.frames_left == 0) {
+                        adsr.cur_stage += 1;
+                        adsr.init_stage_amplitude(amplitude);
+                    }
                 }
             }
             local_wavegen
@@ -111,7 +147,7 @@ macro_rules! wavegen_set {
     ]};
 }
 
-const WAVEGEN_TABLE: [[Wavegen; 5]; 5] = [
+pub const WAVEGEN_TABLE: [[Wavegen; 5]; 5] = [
     wavegen_set!(Sine),
     wavegen_set!(Square),
     wavegen_set!(Triangle),
@@ -147,5 +183,41 @@ impl Instrument {
             *carrier_step = 0;
             *modulator_step = 0;
         }
+    }
+
+    pub fn get_adsr(&self, samplerate: i32, length: i32) -> ADSRState {
+        let mut adsr: ADSRState = Default::default();
+        adsr.cur_stage = 0;
+
+        // Attack
+        adsr.stages[0].frames_left = (self.attack as i32)*samplerate >> 12;
+        adsr.stages[0].amplitude_step = (self.amplitude as i32)<<8;
+        if adsr.stages[0].frames_left > 0 {
+            adsr.stages[0].amplitude_step /= adsr.stages[0].frames_left;
+        }
+
+        // Decay
+        adsr.stages[1].frames_left = (self.decay as i32)*samplerate >> 12;
+        adsr.stages[1].amplitude_step = ((self.sustain as i32) - (self.amplitude as i32))<<8;
+        if adsr.stages[1].frames_left > 0 {
+            adsr.stages[1].amplitude_step /= adsr.stages[1].frames_left;
+        }
+
+        // Release
+        let frames_so_far = adsr.stages[0].frames_left + adsr.stages[1].frames_left;
+        let frames_left = length - frames_so_far;
+        let intended_release = (self.release as i32)*samplerate >> 12;
+
+        adsr.stages[3].frames_left = if frames_left < intended_release {frames_left} else {intended_release};
+        adsr.stages[3].amplitude_step = -(self.sustain as i32)<<8;
+        if adsr.stages[3].frames_left > 0 {
+            adsr.stages[3].amplitude_step /= adsr.stages[3].frames_left;
+        }
+
+        // Sustain
+        adsr.stages[2].frames_left = length - adsr.stages[0].frames_left - adsr.stages[1].frames_left - adsr.stages[3].frames_left;
+        adsr.stages[2].amplitude_step = 0;
+
+        adsr
     }
 }

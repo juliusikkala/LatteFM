@@ -1,17 +1,18 @@
 use crate::tune::Tune;
 use crate::channel::Command;
-use crate::instrument::{Wavegen, dummy_wavegen};
+use crate::instrument::{Wavegen, WAVEGEN_TABLE, ADSRState};
 
 pub struct ChannelPlayer {
     command_index: usize,
     instrument_index: usize,
     wavegen: Wavegen,
-    note_frames_done: i32,
     note_frames_left: i32,
     carrier_step: i32,
     carrier_phase: i32,
     modulator_step: i32,
     modulator_phase: i32,
+    amplitude: i32, // 24-bit fixed point (to avoid some rounding stupidity)
+    adsr: ADSRState
 }
 
 impl Default for ChannelPlayer {
@@ -19,13 +20,14 @@ impl Default for ChannelPlayer {
         ChannelPlayer {
             command_index: 0,
             instrument_index: 0,
-            wavegen: dummy_wavegen,
-            note_frames_done: 0,
+            wavegen: WAVEGEN_TABLE[0][0],
             note_frames_left: 0,
             carrier_step: 0,
             carrier_phase: 0,
             modulator_step: 0,
-            modulator_phase: 0
+            modulator_phase: 0,
+            amplitude: 0,
+            adsr: Default::default()
         }
     }
 }
@@ -37,30 +39,31 @@ impl ChannelPlayer {
         command_stream: &[Command],
         out: &mut [i8]
     ) {
-        let mut frames_left: usize = out.len();
+        let mut frames_left: i32 = out.len() as i32;
         let mut start_frame: usize = 0;
 
         while frames_left > 0 {
-            let step_frames = if (frames_left as i32) < self.note_frames_left {
-                frames_left as i32
+            let step_frames = if frames_left < self.note_frames_left {
+                frames_left
             } else {
                 self.note_frames_left
             };
 
-            (self.wavegen)(
-                &tune.instruments[self.instrument_index],
-                self.note_frames_done,
-                self.note_frames_left,
-                self.carrier_step,
-                &mut self.carrier_phase,
-                self.modulator_step,
-                &mut self.modulator_phase,
-                &mut out[start_frame..(start_frame+(step_frames as usize))]
-            );
+            if self.carrier_step != 0 {
+                (self.wavegen)(
+                    &tune.instruments[self.instrument_index],
+                    &mut self.adsr,
+                    &mut self.amplitude,
+                    self.carrier_step,
+                    &mut self.carrier_phase,
+                    self.modulator_step,
+                    &mut self.modulator_phase,
+                    &mut out[start_frame..(start_frame+(step_frames as usize))]
+                );
+            }
 
             start_frame += step_frames as usize;
-            frames_left -= step_frames as usize;
-            self.note_frames_done += step_frames;
+            frames_left -= step_frames;
             self.note_frames_left -= step_frames;
 
             if self.note_frames_left <= 0 {
@@ -92,9 +95,22 @@ impl ChannelPlayer {
                 },
                 Command::Beat(beats) => {
                     self.note_frames_left = tune.beat_length * beats as i32;
-                    self.note_frames_done = 0;
-                    self.carrier_phase = self.carrier_phase&0xFFFF;
-                    self.modulator_phase = self.modulator_phase&0xFFFF;
+                    self.amplitude = 0;
+                    let instrument = &tune.instruments[self.instrument_index]; 
+                    self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left);
+                    self.adsr.init_stage_amplitude(&mut self.amplitude);
+
+                    // We can only reset phase if the initial amplitude is zero.
+                    if self.amplitude == 0 {
+                        self.carrier_phase = 0;
+                        self.modulator_phase = instrument.modulator_phase as i32;
+                    } else {
+                        // Otherwise, we have to continue where we left off to
+                        // avoid clicks in the sound. This messes up
+                        // carrier-modulator synchronization.
+                        self.carrier_phase = self.carrier_phase&0xFFFF;
+                        self.modulator_phase = self.modulator_phase&0xFFFF;
+                    }
                     break;
                 },
                 Command::Jump(index) => self.command_index = index as usize,
