@@ -167,4 +167,5 @@ pub enum Command {
     SetInstrument(u8), // Changes instrument to the given index. Always set the instrument before starting the note it should play.
     Beat(u8), // Steps given number of beats ahead
     Jump(u8), // Jump to the given command index (used for looping)
+    Repeat(u8), // Repeats the following command only N times, with the Nth time skipping the command. Useful with Jump.
 }

@@ -2,6 +2,7 @@ use crate::tune::Tune;
 use crate::channel::Command;
 use crate::instrument::{Wavegen, WAVEGEN_TABLE, ADSRState};
 
+#[derive(Clone, Copy)]
 pub struct ChannelPlayer {
     command_index: usize,
     instrument_index: usize,
@@ -12,7 +13,8 @@ pub struct ChannelPlayer {
     modulator_step: i32,
     modulator_phase: i32,
     amplitude: i32, // 24-bit fixed point (to avoid some rounding stupidity)
-    adsr: ADSRState
+    adsr: ADSRState,
+    repeat_counter: i32,
 }
 
 impl Default for ChannelPlayer {
@@ -27,7 +29,8 @@ impl Default for ChannelPlayer {
             modulator_step: 0,
             modulator_phase: 0,
             amplitude: 0,
-            adsr: Default::default()
+            adsr: Default::default(),
+            repeat_counter: 0
         }
     }
 }
@@ -114,6 +117,16 @@ impl ChannelPlayer {
                     break;
                 },
                 Command::Jump(index) => self.command_index = index as usize,
+                Command::Repeat(count) => {
+                    if self.repeat_counter == 0 {
+                        self.repeat_counter = count as i32;
+                    } else {
+                        self.repeat_counter -= 1;
+                        if self.repeat_counter == 0 {
+                            self.command_index += 1;
+                        }
+                    }
+                }
             }
         }
     }

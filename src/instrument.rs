@@ -21,6 +21,7 @@ pub struct ADSRStep {
     pub amplitude_step: i32,
 }
 
+#[derive(Clone, Copy)]
 pub struct ADSRState {
     pub cur_stage: usize,
     pub stages: [ADSRStep; 4]
