@@ -15,16 +15,17 @@ const INSTRUMENTS: [Instrument; 1] = [
         sustain: u16::MAX,
         release: 0,
         pan: 0,
-        modulator_waveform: Waveform::Sine,
-        modulator_amplitude: u16::MAX/2,
-        modulator_mul: 1,
+        modulator_waveform: Waveform::Triangle,
+        modulator_amplitude: u16::MAX/8,
+        modulator_mul: 2,
         modulator_div: 1,
         modulator_phase: 0
     }
 ];
 
 use pm_mod::channel::note_names::*;
-const CHANNEL0: [Command; 43] = [
+const CHANNEL0: [Command; 44] = [
+    Command::SetInstrument(0),
     Command::Note(GH4), Command::Beat(2),
     Command::Note(DH5), Command::Beat(2),
     Command::Note(FH5), Command::Beat(1),
@@ -46,14 +47,14 @@ const CHANNEL0: [Command; 43] = [
     Command::Note(GH5), Command::Beat(1),
     Command::Note(GH4), Command::Beat(1),
     Command::Note(PAUSE), Command::Beat(1),
-    Command::Jump(0)
+    Command::Jump(1)
 ];
 
 const CHANNELS: [&'static[Command]; 1]= [&CHANNEL0];
 
 const EXAMPLE: Tune = Tune{
-    samplerate: 44100,
-    beat_length: 5088,
+    samplerate: 8192,
+    beat_length: 1024,
     instruments: &INSTRUMENTS,
     channels: &CHANNELS
 };

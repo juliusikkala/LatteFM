@@ -1,9 +1,11 @@
 use crate::tune::Tune;
-use crate::channel::{Command, note_names};
+use crate::channel::Command;
+use crate::instrument::{Wavegen, dummy_wavegen};
 
 pub struct ChannelPlayer {
     command_index: usize,
     instrument_index: usize,
+    wavegen: Wavegen,
     note_frames_done: i32,
     note_frames_left: i32,
     carrier_step: i32,
@@ -17,6 +19,7 @@ impl Default for ChannelPlayer {
         ChannelPlayer {
             command_index: 0,
             instrument_index: 0,
+            wavegen: dummy_wavegen,
             note_frames_done: 0,
             note_frames_left: 0,
             carrier_step: 0,
@@ -26,23 +29,6 @@ impl Default for ChannelPlayer {
         }
     }
 }
-
-// Note frequency lookup table, contains C8-B8. These are the frequencies
-// multiplied by 65536. The semitone index of that C8 is 95, B8 is 107.
-const NOTE_FREQ_LOOKUP: [i32; 12] = [
-    274334289,
-    290647054,
-    307929828,
-    326240288,
-    345639545,
-    366192342,
-    387967272,
-    411037006,
-    435478539,
-    461373440,
-    488808132,
-    517874176
-];
 
 impl ChannelPlayer {
     fn generate(
@@ -61,17 +47,16 @@ impl ChannelPlayer {
                 self.note_frames_left
             };
 
-            if self.instrument_index < tune.instruments.len() {
-                tune.instruments[self.instrument_index].generate(
-                    self.note_frames_done,
-                    self.note_frames_left,
-                    self.carrier_step,
-                    &mut self.carrier_phase,
-                    self.modulator_step,
-                    &mut self.modulator_phase,
-                    &mut out[start_frame..(start_frame+(step_frames as usize))]
-                );
-            }
+            (self.wavegen)(
+                &tune.instruments[self.instrument_index],
+                self.note_frames_done,
+                self.note_frames_left,
+                self.carrier_step,
+                &mut self.carrier_phase,
+                self.modulator_step,
+                &mut self.modulator_phase,
+                &mut out[start_frame..(start_frame+(step_frames as usize))]
+            );
 
             start_frame += step_frames as usize;
             frames_left -= step_frames as usize;
@@ -94,24 +79,16 @@ impl ChannelPlayer {
             self.command_index += 1;
             match command_stream[cur_command_index] {
                 Command::Note(pitch) => {
-                    // TODO: Make this faster somehow if needed?
-                    let max_note = note_names::B8 as i32;
-                    if (pitch as i32) <= max_note {
-                        let octave = (max_note - (pitch as i32))/12;
-                        let lookup_index = octave * 12 + (pitch as i32) - max_note + 11;
-                        let steps = NOTE_FREQ_LOOKUP[lookup_index as usize] >> octave;
-                        self.carrier_step = (steps-(tune.samplerate+1)/2)/tune.samplerate+1;
-                        // TODO: Depends on instrument; use modulator_mul,
-                        // modulator_div
-                        // self.modulator_step =
-                    } else {
-                        // Dumbest way ever for marking pauses...
-                        self.carrier_step = 0;
-                        self.modulator_step = 0;
-                    }
+                    tune.instruments[self.instrument_index].get_timer_steps(
+                        tune.samplerate,
+                        pitch as i32,
+                        &mut self.carrier_step,
+                        &mut self.modulator_step
+                    );
                 },
                 Command::SetInstrument(index) => {
                     self.instrument_index = index as usize;
+                    self.wavegen = tune.instruments[self.instrument_index].get_wavegen();
                 },
                 Command::Beat(beats) => {
                     self.note_frames_left = tune.beat_length * beats as i32;

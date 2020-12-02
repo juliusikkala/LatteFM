@@ -2,7 +2,6 @@ pub fn i16cos(x: i16) -> i16 {
     let mask = (x>>15) as i32;
     let t: i32 = ((x as i32)^mask) as i32;
 
-    // There's an annoying overflow here, we need more safety range.
     let mut u = 1127;
     u = (u * t - 55399812) >> 15;
     u = (u * t + 1831554) >> 15;
@@ -21,3 +20,8 @@ pub fn i16saw(x: i16) -> i16 {
     x
 }
 
+pub fn i16noise(x: i16) -> i16 {
+    // This is actually for 32-bit, but works here too. Maybe not optimal.
+    let t = ((x >> 13) ^ x) as u32;
+    t.wrapping_mul(t.wrapping_mul(t.wrapping_mul(60493)).wrapping_add(19990303)).wrapping_add(1376312589) as i16
+}
