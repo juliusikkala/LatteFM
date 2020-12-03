@@ -1,9 +1,9 @@
 // This is a cover of the legendary hybrid song / Funky Stars by Quazar of
 // Sanxion.
-use pm_mod::instrument::{Instrument, Waveform};
-use pm_mod::channel::Command;
-use pm_mod::tune::Tune;
-use pm_mod::player::Player;
+use lattefm::instrument::{Instrument, Waveform};
+use lattefm::channel::Command;
+use lattefm::tune::Tune;
+use lattefm::player::Player;
 use sdl2;
 use sdl2::audio::{AudioCallback, AudioSpecDesired};
 use std::time::Duration;
@@ -19,21 +19,21 @@ const INSTRUMENTS: [Instrument; 6] = [
         pan: 0,
         modulator_waveform: Waveform::Sine,
         modulator_amplitude: u16::MAX/5,
-        modulator_mul: 1,
+        modulator_mul: 4,
         modulator_div: 1,
         modulator_phase: 0
     },
     Instrument{ // Tweet
         carrier_waveform: Waveform::Sine,
-        amplitude: u16::MAX/6,
+        amplitude: u16::MAX/8,
         attack: (1<<12)/32,
         decay: (1<<12)/32,
-        sustain: u16::MAX/8,
+        sustain: u16::MAX/12,
         release: (1<<12)/32,
         pan: 0,
         modulator_waveform: Waveform::Sine,
         modulator_amplitude: u16::MAX/2,
-        modulator_mul: 2,
+        modulator_mul: 4,
         modulator_div: 1,
         modulator_phase: 0
     },
@@ -95,7 +95,7 @@ const INSTRUMENTS: [Instrument; 6] = [
     },
 ];
 
-use pm_mod::channel::note_names::*;
+use lattefm::channel::note_names::*;
 const CHANNEL0: [Command; 43] = [
     Command::SetInstrument(0),
     Command::Note(GH4), Command::Beat(2),
@@ -207,23 +207,23 @@ const CHANNEL4: [Command; 42] = [
     Command::Note(C5), Command::Beat(1),
     Command::Note(C5), Command::Beat(3),
     Command::SetInstrument(4),
-    Command::Note(F3), Command::Beat(4),
+    Command::Note(C3), Command::Beat(4),
     Command::SetInstrument(3),
     Command::Note(C5), Command::Beat(2),
     Command::SetInstrument(4),
-    Command::Note(F3), Command::Beat(2),
-    Command::Note(F3), Command::Beat(4),
+    Command::Note(C3), Command::Beat(2),
+    Command::Note(C3), Command::Beat(4),
     Command::SetInstrument(3),
     Command::Note(C5), Command::Beat(3),
     Command::Note(C5), Command::Beat(1),
     Command::SetInstrument(4),
-    Command::Note(F3), Command::Beat(4),
+    Command::Note(C3), Command::Beat(4),
     Command::SetInstrument(3),
     Command::Note(C5), Command::Beat(4),
     Command::SetInstrument(4),
-    Command::Note(F3), Command::Beat(1),
-    Command::Note(F3), Command::Beat(2),
-    Command::Note(F3), Command::Beat(1),
+    Command::Note(C3), Command::Beat(1),
+    Command::Note(C3), Command::Beat(2),
+    Command::Note(C3), Command::Beat(1),
     Command::SetInstrument(3),
     Command::Note(C5), Command::Beat(3),
     Command::Note(C5), Command::Beat(1),

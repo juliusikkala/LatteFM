@@ -116,10 +116,10 @@ macro_rules! wavegen_template {
                     let end_frame = start_frame+(step_frames as usize);
                     for x in out[start_frame..end_frame].iter_mut() {
                         let modulator = oscillator!(Waveform::$modulator_waveform, *modulator_phase as i16);
-                        let local_phase = ((modulator as i32) * (instr.modulator_amplitude as i32)) >> 16;
-                        let carrier = oscillator!(Waveform::$carrier_waveform, (*carrier_phase + local_phase) as i16) as i32;
+                        let mod_value = ((modulator as i32) * (instr.modulator_amplitude as i32)) >> 20; // 12-bit fixed point
+                        let carrier = oscillator!(Waveform::$carrier_waveform, *carrier_phase as i16) as i32;
                         *x += ((carrier*(*amplitude >> 9)) >> 23) as i8;
-                        *carrier_phase += carrier_step;
+                        *carrier_phase += carrier_step * (mod_value + (1<<11)) >> 11;
                         *modulator_phase += modulator_step;
                         *amplitude += stage.amplitude_step;
                     }

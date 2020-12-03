@@ -1,5 +1,5 @@
 [package]
-name = "pm_mod"
+name = "lattefm"
 version = "0.1.0"
 authors = ["Julius Ikkala <julius.ikkala@gmail.com>"]
 edition = "2018"
