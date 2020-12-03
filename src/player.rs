@@ -12,7 +12,8 @@ pub struct ChannelPlayer {
     carrier_phase: i32,
     modulator_step: i32,
     modulator_phase: i32,
-    amplitude: i32, // 24-bit fixed point (to avoid some rounding stupidity)
+    pan: (i32, i32), // 8-bit fixed point
+    amplitude: (i32, i32), // 24-bit fixed point (to avoid some rounding stupidity)
     adsr: ADSRState,
     repeat_counter: i32,
 }
@@ -28,7 +29,8 @@ impl Default for ChannelPlayer {
             carrier_phase: 0,
             modulator_step: 0,
             modulator_phase: 0,
-            amplitude: 0,
+            pan: (1<<8, 1<<8),
+            amplitude: (0, 0),
             adsr: Default::default(),
             repeat_counter: 0
         }
@@ -42,7 +44,7 @@ impl ChannelPlayer {
         command_stream: &[Command],
         out: &mut [i8]
     ) {
-        let mut frames_left: i32 = out.len() as i32;
+        let mut frames_left: i32 = (out.len()>>1) as i32;
         let mut start_frame: usize = 0;
 
         while frames_left > 0 {
@@ -52,6 +54,7 @@ impl ChannelPlayer {
                 self.note_frames_left
             };
 
+            let end_frame = start_frame+(step_frames as usize);
             if self.carrier_step != 0 {
                 (self.wavegen)(
                     &tune.instruments[self.instrument_index],
@@ -61,7 +64,7 @@ impl ChannelPlayer {
                     &mut self.carrier_phase,
                     self.modulator_step,
                     &mut self.modulator_phase,
-                    &mut out[start_frame..(start_frame+(step_frames as usize))]
+                    &mut out[start_frame*2..end_frame*2]
                 );
             }
 
@@ -98,13 +101,13 @@ impl ChannelPlayer {
                 },
                 Command::Beat(beats) => {
                     self.note_frames_left = tune.beat_length * beats as i32;
-                    self.amplitude = 0;
+                    self.amplitude = (0, 0);
                     let instrument = &tune.instruments[self.instrument_index]; 
-                    self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left);
+                    self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left, self.pan);
                     self.adsr.init_stage_amplitude(&mut self.amplitude);
 
                     // We can only reset phase if the initial amplitude is zero.
-                    if self.amplitude == 0 {
+                    if self.amplitude == (0, 0) {
                         self.carrier_phase = 0;
                         self.modulator_phase = instrument.modulator_phase as i32;
                     } else {
@@ -125,6 +128,15 @@ impl ChannelPlayer {
                         if self.repeat_counter == 0 {
                             self.command_index += 1;
                         }
+                    }
+                },
+                Command::Pan(pan) => {
+                    if pan <= 0 {
+                        self.pan.0 = 1<<8;
+                        self.pan.1 = (1<<8) + (pan as i32)*2;
+                    } else {
+                        self.pan.0 = (1<<8) - (pan as i32)*2 - 2;
+                        self.pan.1 = 1<<8;
                     }
                 }
             }

@@ -18,7 +18,7 @@ macro_rules! oscillator {
 #[derive(Clone, Copy)]
 pub struct ADSRStep {
     pub frames_left: i32,
-    pub amplitude_step: i32,
+    pub amplitude_step: (i32, i32),
 }
 
 #[derive(Clone, Copy)]
@@ -31,15 +31,16 @@ impl Default for ADSRState {
     fn default() -> ADSRState {
         ADSRState {
             cur_stage: 0,
-            stages: [ADSRStep {frames_left: 0, amplitude_step: 0}; 4]
+            stages: [ADSRStep {frames_left: 0, amplitude_step: (0, 0)}; 4]
         }
     }
 }
 
 impl ADSRState {
-    pub fn init_stage_amplitude(&mut self, amplitude: &mut i32) {
+    pub fn init_stage_amplitude(&mut self, amplitude: &mut (i32, i32)) {
         while self.cur_stage < self.stages.len() && self.stages[self.cur_stage].frames_left == 0 {
-            *amplitude += self.stages[self.cur_stage].amplitude_step;
+            amplitude.0 += self.stages[self.cur_stage].amplitude_step.0;
+            amplitude.1 += self.stages[self.cur_stage].amplitude_step.1;
             self.cur_stage += 1;
         }
     }
@@ -52,7 +53,6 @@ pub struct Instrument {
     pub decay: u16,   // 12-bit fixed point, in seconds.
     pub sustain: u16, // 16-bit fixed point (sustain amplitude)
     pub release: u16, // 12-bit fixed point, in seconds
-    pub pan: u16,
     pub modulator_waveform: Waveform,
     pub modulator_amplitude: u16, // 16-bit fixed point
     pub modulator_mul: u16,
@@ -81,7 +81,7 @@ const NOTE_FREQ_LOOKUP: [u32; 12] = [
 pub type Wavegen = fn(
     instr: &Instrument,
     adsr: &mut ADSRState,
-    amplitude: &mut i32,
+    amplitude: &mut (i32, i32),
     carrier_step: i32,
     carrier_phase: &mut i32,
     modulator_step: i32,
@@ -95,14 +95,14 @@ macro_rules! wavegen_template {
             fn local_wavegen(
                 instr: &Instrument,
                 adsr: &mut ADSRState,
-                amplitude: &mut i32,
+                amplitude: &mut (i32, i32),
                 carrier_step: i32,
                 carrier_phase: &mut i32,
                 modulator_step: i32,
                 modulator_phase: &mut i32,
                 out: &mut [i8]
             ){
-                let mut frames_left: i32 = out.len() as i32;
+                let mut frames_left: i32 = (out.len()>>1) as i32;
                 let mut start_frame: usize = 0;
 
                 while frames_left > 0 {
@@ -114,14 +114,16 @@ macro_rules! wavegen_template {
                     };
 
                     let end_frame = start_frame+(step_frames as usize);
-                    for x in out[start_frame..end_frame].iter_mut() {
+                    for i in start_frame..end_frame {
                         let modulator = oscillator!(Waveform::$modulator_waveform, *modulator_phase as i16);
                         let mod_value = ((modulator as i32) * (instr.modulator_amplitude as i32)) >> 20; // 12-bit fixed point
                         let carrier = oscillator!(Waveform::$carrier_waveform, *carrier_phase as i16) as i32;
-                        *x += ((carrier*(*amplitude >> 9)) >> 23) as i8;
+                        out[i*2] += ((carrier*(amplitude.0 >> 9)) >> 23) as i8;
+                        out[i*2+1] += ((carrier*(amplitude.1 >> 9)) >> 23) as i8;
                         *carrier_phase += carrier_step * (mod_value + (1<<11)) >> 11;
                         *modulator_phase += modulator_step;
-                        *amplitude += stage.amplitude_step;
+                        amplitude.0 += stage.amplitude_step.0;
+                        amplitude.1 += stage.amplitude_step.1;
                     }
 
                     start_frame = end_frame;
@@ -186,22 +188,26 @@ impl Instrument {
         }
     }
 
-    pub fn get_adsr(&self, samplerate: i32, length: i32) -> ADSRState {
+    pub fn get_adsr(&self, samplerate: i32, length: i32, pan: (i32, i32)) -> ADSRState {
         let mut adsr: ADSRState = Default::default();
         adsr.cur_stage = 0;
 
         // Attack
         adsr.stages[0].frames_left = (self.attack as i32)*samplerate >> 12;
-        adsr.stages[0].amplitude_step = (self.amplitude as i32)<<8;
+        adsr.stages[0].amplitude_step.0 = (self.amplitude as i32) * pan.0;
+        adsr.stages[0].amplitude_step.1 = (self.amplitude as i32) * pan.1;
         if adsr.stages[0].frames_left > 0 {
-            adsr.stages[0].amplitude_step /= adsr.stages[0].frames_left;
+            adsr.stages[0].amplitude_step.0 /= adsr.stages[0].frames_left;
+            adsr.stages[0].amplitude_step.1 /= adsr.stages[0].frames_left;
         }
 
         // Decay
         adsr.stages[1].frames_left = (self.decay as i32)*samplerate >> 12;
-        adsr.stages[1].amplitude_step = ((self.sustain as i32) - (self.amplitude as i32))<<8;
+        let decay_base_amplitude = (self.sustain as i32) - (self.amplitude as i32);
+        adsr.stages[1].amplitude_step = (decay_base_amplitude * pan.0, decay_base_amplitude * pan.1);
         if adsr.stages[1].frames_left > 0 {
-            adsr.stages[1].amplitude_step /= adsr.stages[1].frames_left;
+            adsr.stages[1].amplitude_step.0 /= adsr.stages[1].frames_left;
+            adsr.stages[1].amplitude_step.1 /= adsr.stages[1].frames_left;
         }
 
         // Release
@@ -210,14 +216,16 @@ impl Instrument {
         let intended_release = (self.release as i32)*samplerate >> 12;
 
         adsr.stages[3].frames_left = if frames_left < intended_release {frames_left} else {intended_release};
-        adsr.stages[3].amplitude_step = -(self.sustain as i32)<<8;
+        let release_base_amplitude = -(self.sustain as i32);
+        adsr.stages[3].amplitude_step = (release_base_amplitude * pan.0, release_base_amplitude * pan.1);
         if adsr.stages[3].frames_left > 0 {
-            adsr.stages[3].amplitude_step /= adsr.stages[3].frames_left;
+            adsr.stages[3].amplitude_step.0 /= adsr.stages[3].frames_left;
+            adsr.stages[3].amplitude_step.1 /= adsr.stages[3].frames_left;
         }
 
         // Sustain
         adsr.stages[2].frames_left = length - adsr.stages[0].frames_left - adsr.stages[1].frames_left - adsr.stages[3].frames_left;
-        adsr.stages[2].amplitude_step = 0;
+        adsr.stages[2].amplitude_step = (0, 0);
 
         adsr
     }

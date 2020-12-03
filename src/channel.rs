@@ -168,4 +168,5 @@ pub enum Command {
     Beat(u8), // Steps given number of beats ahead
     Jump(u8), // Jump to the given command index (used for looping)
     Repeat(u8), // Repeats the following command only N times, with the Nth time skipping the command. Useful with Jump.
+    Pan(i8), // Stereo panning for the channel, 0 is center, -128 left and 127 right.
 }
