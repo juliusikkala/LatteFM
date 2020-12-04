@@ -165,7 +165,7 @@ pub mod note_names {
 pub enum Command {
     Note(u8), // Pitch, 0 is release. In semitones from C0 upwards. B8 is the highest allowed note.
     SetInstrument(u8), // Changes instrument to the given index. Always set the instrument before starting the note it should play.
-    Beat(u8), // Steps given number of beats ahead
+    Play(u8), // Steps given of ticks ahead
     Jump(u8), // Jump to the given command index (used for looping)
     Repeat(u8), // Repeats the following command only N times, with the Nth time skipping the command. Useful with Jump.
     Pan(i8), // Stereo panning for the channel, 0 is center, -128 left and 127 right.

@@ -99,8 +99,8 @@ impl ChannelPlayer {
                     self.instrument_index = index as usize;
                     self.wavegen = tune.instruments[self.instrument_index].get_wavegen();
                 },
-                Command::Beat(beats) => {
-                    self.note_frames_left = tune.beat_length * beats as i32;
+                Command::Play(ticks) => {
+                    self.note_frames_left = tune.tick_length * ticks as i32;
                     self.amplitude = (0, 0);
                     let instrument = &tune.instruments[self.instrument_index]; 
                     self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left, self.pan);
