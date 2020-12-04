@@ -11,7 +11,7 @@ struct XmHeader {
     _1a: u8, // Basically ignored, always 0x1a
     tracker_name: [u8; 20],
     version: u16,
-    _header_size: u32,
+    header_size: u32,
     song_length: u16,
     song_restart_pos: u16,
     num_channels: u16,
@@ -20,7 +20,7 @@ struct XmHeader {
     flags: u16,
     tempo: u16,
     bpm: u16,
-    #[br(count = 256)]
+    #[br(count = header_size-20)]
     pattern_order_table: Vec<u8>,
 }
 
@@ -90,6 +90,7 @@ struct XmPattern {
     length: u32,
     _packing_type: u8,
     num_rows: u16,
+    #[br(pad_size_to(length-7))]
     pattern_data_size: u16,
     #[br(parse_with = XmNote::parse, args(pattern_data_size))]
     pattern_data: Vec<XmNote>
