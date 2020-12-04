@@ -177,8 +177,10 @@ struct XmInstrument {
     name: [u8; 22],
     instrument_type: u8,
     num_samples: u16,
-    #[br(if(num_samples > 0), pad_size_to(header_length-29))]
+    #[br(if(num_samples > 0))]
     extra_header: Option<XmInstrumentExtraHeader>,
+    #[br(pad_size_to(if num_samples == 0 {header_length-29} else {header_length-243}))]
+    pad: u8,
     #[br(count = num_samples)]
     sample_headers: Vec<XmSampleHeader>,
     #[br(parse_with = XmSample::parse, args(sample_headers.clone()))]
@@ -205,11 +207,6 @@ fn main() {
     let mut file = File::open(filename).expect("Failed to open specified file");
     let xm: XmFile = file.read_le().expect("Failed to parse XM file");
 
-    let instrument_list = xm.instruments.iter()
-        .map(|i| std::str::from_utf8(&i.name).unwrap())
-        .filter(|x| x.trim_matches(|c| c == ' ' || c == '\0').len() > 0)
-        .fold(String::new(), |a, b| a + "//    " + b + "\n");
-
     println!("\
         // Automatically generated LatteFM music file.\n\
         //\n\
@@ -223,8 +220,7 @@ fn main() {
         // Frequency table: {}\n\
         // Tempo: {}\n\
         // BPM: {}\n\
-        // Author's comments / instrument list: \n\
-        {}",
+        // Author's comments / instrument list:",
         filename,
         std::str::from_utf8(&xm.header.name).unwrap(),
         std::str::from_utf8(&xm.header.tracker_name).unwrap(),
@@ -234,7 +230,10 @@ fn main() {
         xm.header.num_instruments,
         if (xm.header.flags&1) == 1 {"linear"} else {"amiga"},
         xm.header.tempo,
-        xm.header.bpm,
-        instrument_list
+        xm.header.bpm
     );
+
+    for (i, line) in xm.instruments.iter().map(|i| std::str::from_utf8(&i.name).unwrap()).enumerate() {
+        println!("// {:02X} |{}", i+1, line);
+    }
 }
