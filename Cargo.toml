@@ -8,3 +8,4 @@ edition = "2018"
 
 [dev-dependencies]
 sdl2 = "0.34.3"
+binread = "1.4.1"
