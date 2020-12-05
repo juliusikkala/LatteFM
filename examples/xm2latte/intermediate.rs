@@ -330,10 +330,14 @@ impl Module {
             println!("const CHANNEL{}: [Command; {}] = [", i, channel.len());
             for command in channel.iter() {
                 if let Command::Note(n) = command {
-                    let note_name = String::from([
-                        "C", "CH", "D", "DH", "E", "F",
-                        "FH", "G", "GH", "A", "AH", "B"
-                    ][(n%12) as usize]) + &(n/12).to_string();
+                    let note_name = if *n == PAUSE {
+                        String::from("PAUSE")
+                    } else {
+                        String::from([
+                            "C", "CH", "D", "DH", "E", "F",
+                            "FH", "G", "GH", "A", "AH", "B"
+                        ][(n%12) as usize]) + &(n/12).to_string()
+                    };
                     println!("    Note({}),", note_name);
                 } else {
                     println!("    {:?},", command);
