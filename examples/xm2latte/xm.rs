@@ -53,31 +53,37 @@ impl Note {
             let note_or_packing: u8 = reader.read_le()?;
             let mut n: Note = Default::default();
             pattern_data_size -= 1;
-            if (note_or_packing & 0x80) == 1 {
+            if (note_or_packing & 0x80) != 0 {
                 // Packed
-                if (note_or_packing & 0x01) == 1 {
+                if (note_or_packing & 0x01) != 0 {
                     n.note = Some(reader.read_le()?);
                     pattern_data_size -= 1;
                 }
-                if (note_or_packing & 0x02) == 1 {
+                if (note_or_packing & 0x02) != 0 {
                     n.instrument = Some(reader.read_le()?);
                     pattern_data_size -= 1;
                 }
-                if (note_or_packing & 0x04) == 1 {
+                if (note_or_packing & 0x04) != 0 {
                     n.volume = Some(reader.read_le()?);
                     pattern_data_size -= 1;
                 }
-                if (note_or_packing & 0x08) == 1 {
+                if (note_or_packing & 0x08) != 0 {
                     n.effect_type = Some(reader.read_le()?);
                     pattern_data_size -= 1;
                 }
-                if (note_or_packing & 0x10) == 1 {
+                if (note_or_packing & 0x10) != 0 {
                     n.effect_parameter = Some(reader.read_le()?);
                     pattern_data_size -= 1;
                 }
             } else {
+                println!("So you're telling me there's a chance?");
                 // Not packed
                 n.note = Some(note_or_packing);
+                n.instrument = Some(reader.read_le()?);
+                n.volume = Some(reader.read_le()?);
+                n.effect_type = Some(reader.read_le()?);
+                n.effect_parameter = Some(reader.read_le()?);
+                pattern_data_size -= 4;
             }
             notes.push(n);
         }
@@ -307,14 +313,14 @@ impl From<File> for intermediate::Module {
                     ];
 
                     if let Some(i) = note.instrument {
-                        cur_instrument = i as usize;
+                        cur_instrument = (i-1) as usize;
                     }
 
                     if let Some(n) = note.note {
                         channel.push(intermediate::Command::Play(tick_counter));
                         let mut note_command = intermediate::PAUSE;
                         if let Some(ref extra) = xm.instruments[cur_instrument].extra_header {
-                            if n < 97 { // Magic key-off number.
+                            if n < 97 { // 97 is the magic key-off number.
                                 let sample_index = extra.sample_number[n as usize-1] as usize;
                                 if let Some(&index) = sample_instrument_table.get(&(cur_instrument, sample_index)) {
                                     channel.push(intermediate::Command::SetInstrument(index));

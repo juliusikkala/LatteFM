@@ -18,6 +18,9 @@ fn main() {
         filename
     );
     xm.print_preamble();
+
+    println!("");
+
     let module: intermediate::Module = From::from(xm);
     module.print_as_source();
 }

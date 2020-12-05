@@ -2,7 +2,7 @@ use crate::wave::{i16cos, i16square, i16triangle, i16saw, i16noise};
 use crate::channel::note_names;
 
 #[repr(usize)]
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug)]
 pub enum Waveform {
     Sine = 0, Square, Triangle, Saw, Noise
 }
