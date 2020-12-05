@@ -76,7 +76,6 @@ impl Note {
                     pattern_data_size -= 1;
                 }
             } else {
-                println!("So you're telling me there's a chance?");
                 // Not packed
                 n.note = Some(note_or_packing);
                 n.instrument = Some(reader.read_le()?);
@@ -187,8 +186,8 @@ struct Instrument {
     num_samples: u16,
     #[br(if(num_samples > 0))]
     extra_header: Option<InstrumentExtraHeader>,
-    #[br(pad_size_to(if num_samples == 0 {header_length-29} else {header_length-243}))]
-    _pad: u8,
+    #[br(if(header_length > 29), pad_size_to(if num_samples == 0 {header_length-29} else {header_length-243}))]
+    _pad: Option<u8>,
     #[br(count = num_samples)]
     sample_headers: Vec<SampleHeader>,
     #[br(parse_with = Sample::parse, args(sample_headers.clone()))]
@@ -317,7 +316,9 @@ impl From<File> for intermediate::Module {
                     }
 
                     if let Some(n) = note.note {
-                        channel.push(intermediate::Command::Play(tick_counter));
+                        if tick_counter != 0 {
+                            channel.push(intermediate::Command::Play(tick_counter));
+                        }
                         let mut note_command = intermediate::PAUSE;
                         if let Some(ref extra) = xm.instruments[cur_instrument].extra_header {
                             if n < 97 { // 97 is the magic key-off number.
@@ -338,6 +339,14 @@ impl From<File> for intermediate::Module {
             if tick_counter != 0 {
                 channel.push(intermediate::Command::Play(tick_counter));
             }
+
+            let mut restart_tick = 0;
+            for pattern_order_index in 0..(xm.header.song_restart_pos as usize) {
+                let pattern_index = xm.header.pattern_order_table[pattern_order_index] as usize;
+                let pattern = &xm.patterns[pattern_index];
+                restart_tick += pattern.num_rows;
+            }
+            channel.push(intermediate::Command::JumpTick(restart_tick as u32));
             m.channels.push(channel);
         }
 
