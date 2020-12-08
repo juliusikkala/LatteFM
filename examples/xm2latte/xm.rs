@@ -33,6 +33,9 @@ struct Note {
     effect_parameter: Option<u8>,
 }
 
+// If Note::note is KEY_OFF, the release period of that note occurs.
+const KEY_OFF: u8 =  97;
+
 impl Default for Note {
     fn default() -> Note {
         Note{
@@ -84,6 +87,7 @@ impl Note {
                 n.effect_parameter = Some(reader.read_le()?);
                 pattern_data_size -= 4;
             }
+
             notes.push(n);
         }
         assert!(pattern_data_size == 0);
@@ -234,7 +238,7 @@ impl File {
         );
 
         for (i, line) in self.instruments.iter().map(|i| std::str::from_utf8(&i.name).unwrap()).enumerate() {
-            println!("// {:02X} |{}", i+1, line);
+            println!("// {:02X} |{}", i+1, line.trim_matches(char::from(0)));
         }
     }
 }
@@ -258,19 +262,20 @@ impl From<File> for intermediate::Module {
 
             if let Some(ref extra) = ins.extra_header {
 
-                let envelope_points: Vec<(f64, f64)> = extra.volume_envelope_points.iter().map(
+                let envelope_points: Vec<(f64, f64)> = extra.volume_envelope_points[0..extra.num_volume_points as usize].iter().map(
                     |x| (2.5/(xm.header.bpm as f64) * x.0 as f64, x.1 as f64 / 64.0)
                 ).collect();
 
-                let sustain_index = if (extra.volume_type&2) != 0 {
-                    extra.volume_sustain_point as i64
-                } else if (extra.volume_type&4) == 0 {
+                let looping = (extra.volume_type&4) != 0;
+                let sustain_index = if looping {
                     extra.volume_loop_start_point as i64
+                } else if (extra.volume_type&2) != 0 {
+                    extra.volume_sustain_point as i64
                 } else {
                     -1
                 };
 
-                fit_ins.fit_adsr(&envelope_points, sustain_index);
+                fit_ins.fit_adsr(&envelope_points, sustain_index, looping);
 
                 for sample_index in 0..(ins.num_samples as usize) {
                     let sample_data: Vec<f64>;
@@ -321,19 +326,35 @@ impl From<File> for intermediate::Module {
                         }
                         let mut note_command = intermediate::PAUSE;
                         if let Some(ref extra) = xm.instruments[cur_instrument].extra_header {
-                            if n < 97 { // 97 is the magic key-off number.
+                            if n < KEY_OFF {
                                 let sample_index = extra.sample_number[n as usize-1] as usize;
                                 if let Some(&index) = sample_instrument_table.get(&(cur_instrument, sample_index)) {
                                     channel.push(intermediate::Command::SetInstrument(index));
                                     note_command = n as u32 - 1;
                                 }
+                            } else if n == KEY_OFF {
+                                note_command = intermediate::RELEASE;
                             }
                         }
                         channel.push(intermediate::Command::Note(note_command));
                         tick_counter = 1;
-                    } else {
-                        tick_counter += 1;
+                        continue;
+                    } else if let Some(volume) = note.volume {
+                        // If volume is zeroed, we might as well put the note on pause.
+                        // Volume also starts from 0x10 (great idea guys, this
+                        // was real nice to debug)
+                        if (volume as i32)-0x10 <= 1 {
+                            if tick_counter != 0 {
+                                channel.push(intermediate::Command::Play(tick_counter));
+                            }
+                            channel.push(intermediate::Command::Note(intermediate::PAUSE));
+                            tick_counter = 1;
+                            continue;
+                        }
                     }
+
+                    tick_counter += 1;
+
                 }
             }
             if tick_counter != 0 {
