@@ -305,6 +305,7 @@ impl From<File> for intermediate::Module {
             let mut channel = vec![];
 
             let mut cur_instrument = 0;
+            let mut cur_volume = 255;
             let mut tick_counter = 0;
 
             for pattern_order_index in 0..(xm.header.song_length as usize) {
@@ -320,41 +321,54 @@ impl From<File> for intermediate::Module {
                         cur_instrument = (i-1) as usize;
                     }
 
+                    let mut note_command = intermediate::PAUSE;
+                    let mut insert_note = false;
+
                     if let Some(n) = note.note {
-                        if tick_counter != 0 {
-                            channel.push(intermediate::Command::Play(tick_counter));
+                        if n < KEY_OFF {
+                            note_command = n as u32 - 1;
+                        } else if n == KEY_OFF {
+                            note_command = intermediate::RELEASE;
                         }
-                        let mut note_command = intermediate::PAUSE;
-                        if let Some(ref extra) = xm.instruments[cur_instrument].extra_header {
-                            if n < KEY_OFF {
-                                let sample_index = extra.sample_number[n as usize-1] as usize;
-                                if let Some(&index) = sample_instrument_table.get(&(cur_instrument, sample_index)) {
-                                    channel.push(intermediate::Command::SetInstrument(index));
-                                    note_command = n as u32 - 1;
-                                }
-                            } else if n == KEY_OFF {
-                                note_command = intermediate::RELEASE;
+                        insert_note = true;
+                    }
+
+                    if let Some(volume) = note.volume {
+                        // Volume starts from 0x10 _for some reason_
+                        if volume > 0x10 && volume < 0x50 {
+                            // If volume is zeroed, we might as well put the note on pause.
+                            if !insert_note && (volume as i32)-0x10 <= 1 {
+                                note_command = intermediate::PAUSE;
+                                insert_note = true;
                             }
-                        }
-                        channel.push(intermediate::Command::Note(note_command));
-                        tick_counter = 1;
-                        continue;
-                    } else if let Some(volume) = note.volume {
-                        // If volume is zeroed, we might as well put the note on pause.
-                        // Volume also starts from 0x10 (great idea guys, this
-                        // was real nice to debug)
-                        if (volume as i32)-0x10 <= 1 {
-                            if tick_counter != 0 {
-                                channel.push(intermediate::Command::Play(tick_counter));
+                            cur_volume = ((volume-0x10)*4) as u32;
+                            if cur_volume >= 256 {
+                                cur_volume = 255;
                             }
-                            channel.push(intermediate::Command::Note(intermediate::PAUSE));
-                            tick_counter = 1;
-                            continue;
                         }
                     }
 
-                    tick_counter += 1;
+                    if insert_note {
+                        if tick_counter != 0 {
+                            channel.push(intermediate::Command::Play(tick_counter));
+                        }
 
+                        if let Some(ref extra) = xm.instruments[cur_instrument].extra_header {
+                            if note_command != intermediate::RELEASE && note_command != intermediate::PAUSE {
+                                let sample_index = extra.sample_number[note_command as usize] as usize;
+                                if let Some(&index) = sample_instrument_table.get(&(cur_instrument, sample_index)) {
+                                    channel.push(intermediate::Command::SetInstrument(index));
+                                }
+                            }
+                        }
+
+                        channel.push(intermediate::Command::SetVolume(cur_volume));
+                        channel.push(intermediate::Command::Note(note_command));
+                        tick_counter = 1;
+                    }
+                    else {
+                        tick_counter += 1;
+                    }
                 }
             }
             if tick_counter != 0 {

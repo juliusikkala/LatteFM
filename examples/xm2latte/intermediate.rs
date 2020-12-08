@@ -103,6 +103,11 @@ impl Instrument {
     ) {
         // TODO: Determine base frequency from sample_data
         //self.semitone_offset = semitone_offset;
+
+        // Determine max amplitude from sample.
+        let max_amplitude = sample_data.iter().fold(0.0, |a, b| f64::max(a, f64::abs(*b)));
+        self.amplitude *= max_amplitude;
+        self.sustain *= max_amplitude;
     }
 }
 
@@ -114,6 +119,7 @@ pub const RELEASE: u32 = 256;
 pub enum Command {
     Note(u32),
     SetInstrument(u32),
+    SetVolume(u32),
     Play(u32),
     JumpTick(u32), // Unlike LatteFM, this jumps to a specific tick.
     Jump(u32), // This one jumps normally to a specific command.
@@ -217,6 +223,7 @@ impl Module {
         for channel in self.channels.iter_mut() {
             let mut cur_instrument = -1;
             let mut cur_pan = 0;
+            let mut cur_volume = 255;
             let mut cur_note = PAUSE;
             let mut i = 0;
             while i < channel.len() {
@@ -234,6 +241,13 @@ impl Module {
                             continue;
                         }
                         cur_instrument = ins as i32;
+                    },
+                    Command::SetVolume(vol) => {
+                        if vol == cur_volume {
+                            channel.remove(i);
+                            continue;
+                        }
+                        cur_volume = vol;
                     },
                     Command::Pan(p) => {
                         if p == cur_pan {
@@ -406,6 +420,7 @@ impl Module {
         for channel in self.channels.iter() {
             let mut amplitude = 0.0;
             let mut tick = 0;
+            let mut volume_scale = 1.0;
 
             for command in channel.iter() {
                 match command {
@@ -415,12 +430,15 @@ impl Module {
                             self.instruments[ins as usize].sustain
                         );
                     },
+                    &Command::SetVolume(vol) => {
+                        volume_scale = (vol as f64)/255.0;
+                    },
                     &Command::Play(ticks) => {
                         for _ in 0..ticks {
                             if max_amplitudes.len() <= tick {
-                                max_amplitudes.push(amplitude);
+                                max_amplitudes.push(amplitude*volume_scale);
                             } else {
-                                max_amplitudes[tick] += amplitude
+                                max_amplitudes[tick] += amplitude*volume_scale;
                             }
                             tick += 1;
                         }

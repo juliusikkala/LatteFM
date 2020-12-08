@@ -16,6 +16,7 @@ pub struct ChannelPlayer {
     amplitude: (i32, i32), // 24-bit fixed point (to avoid some rounding stupidity)
     adsr: ADSRState,
     repeat_counter: i32,
+    global_volume: i32, // 8-bit fixed point
 }
 
 impl Default for ChannelPlayer {
@@ -32,7 +33,8 @@ impl Default for ChannelPlayer {
             pan: (1<<8, 1<<8),
             amplitude: (0, 0),
             adsr: Default::default(),
-            repeat_counter: 0
+            repeat_counter: 0,
+            global_volume: 256
         }
     }
 }
@@ -99,11 +101,14 @@ impl ChannelPlayer {
                     self.instrument_index = index as usize;
                     self.wavegen = tune.instruments[self.instrument_index].get_wavegen();
                 },
+                Command::SetVolume(volume) => {
+                    self.global_volume = volume as i32;
+                },
                 Command::Play(ticks) => {
                     self.note_frames_left = tune.tick_length * ticks as i32;
                     self.amplitude = (0, 0);
                     let instrument = &tune.instruments[self.instrument_index]; 
-                    self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left, self.pan);
+                    self.adsr = instrument.get_adsr(tune.samplerate, self.note_frames_left, self.pan, self.global_volume);
                     self.adsr.init_stage_amplitude(&mut self.amplitude);
 
                     // We can only reset phase if the initial amplitude is zero.

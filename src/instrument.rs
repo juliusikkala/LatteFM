@@ -188,14 +188,16 @@ impl Instrument {
         }
     }
 
-    pub fn get_adsr(&self, samplerate: i32, length: i32, pan: (i32, i32)) -> ADSRState {
+    pub fn get_adsr(&self, samplerate: i32, length: i32, pan: (i32, i32), volume: i32) -> ADSRState {
         let mut adsr: ADSRState = Default::default();
         adsr.cur_stage = 0;
+        let left = pan.0 * volume >> 8;
+        let right = pan.1 * volume >> 8;
 
         // Attack
         adsr.stages[0].frames_left = (self.attack as i32)*samplerate >> 12;
-        adsr.stages[0].amplitude_step.0 = (self.amplitude as i32) * pan.0;
-        adsr.stages[0].amplitude_step.1 = (self.amplitude as i32) * pan.1;
+        adsr.stages[0].amplitude_step.0 = (self.amplitude as i32) * left;
+        adsr.stages[0].amplitude_step.1 = (self.amplitude as i32) * right;
         if adsr.stages[0].frames_left > 0 {
             adsr.stages[0].amplitude_step.0 /= adsr.stages[0].frames_left;
             adsr.stages[0].amplitude_step.1 /= adsr.stages[0].frames_left;
@@ -204,7 +206,7 @@ impl Instrument {
         // Decay
         adsr.stages[1].frames_left = (self.decay as i32)*samplerate >> 12;
         let decay_base_amplitude = (self.sustain as i32) - (self.amplitude as i32);
-        adsr.stages[1].amplitude_step = (decay_base_amplitude * pan.0, decay_base_amplitude * pan.1);
+        adsr.stages[1].amplitude_step = (decay_base_amplitude * left, decay_base_amplitude * right);
         if adsr.stages[1].frames_left > 0 {
             adsr.stages[1].amplitude_step.0 /= adsr.stages[1].frames_left;
             adsr.stages[1].amplitude_step.1 /= adsr.stages[1].frames_left;
@@ -217,7 +219,7 @@ impl Instrument {
 
         adsr.stages[3].frames_left = if frames_left < intended_release {frames_left} else {intended_release};
         let release_base_amplitude = -(self.sustain as i32);
-        adsr.stages[3].amplitude_step = (release_base_amplitude * pan.0, release_base_amplitude * pan.1);
+        adsr.stages[3].amplitude_step = (release_base_amplitude * left, release_base_amplitude * right);
         if adsr.stages[3].frames_left > 0 {
             adsr.stages[3].amplitude_step.0 /= adsr.stages[3].frames_left;
             adsr.stages[3].amplitude_step.1 /= adsr.stages[3].frames_left;
